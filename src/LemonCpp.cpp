@@ -8,46 +8,36 @@
 #include<vector>
 #include<thread>
 #include<graphics.h>
+
+#include"char.h"
+#include"config.h"
+#include"cpp.h"
+#include"extester.hpp"
+
 using namespace std;
+
+__config conf;
+__color_config colorConf;
 namespace LIB
 {
-	const string keywords[]={
-		"alignas","alignof","and","and_eq","asm",
-		"atomic_cancel","atomic_commit","atomic_noexcept","auto","bitand",
-		"bitor","bool","break","case","catch",
-		"char","char8_t","char16_t","char32_t","class",
-		"compl","concept","const","consteval","constexpr",
-		"constinit","const_cast","continue","contract_assert","co_await",
-		"co_return","co_yield","decltype","default","delete",
-		"do","double","dynamic_cast","else","enum",
-		"explicit","export","extern","false","float",
-		"for","friend","goto","if","inline",
-		"int","long","mutable","namespace","new",
-		"noexcept","not","not_eq","nullptr","operator",
-		"or","or_eq","private","protected","public",
-		"reflexpr","register","reinterpret_cast","requires","return",
-		"short","signed","sizeof","static","static_assert",
-		"static_cast","struct","switch","synchronized","template",
-		"this","thread_local","throw","true","try",
-		"typedef","typeid","typename","union","unsigned",
-		"using","virtual","void","volatile","wchar_t",
-		"while","xor","xor_eq"
-	};
-	bool checkKeyWord(string word)
-	{
-		for(string _keyword:keywords) if(_keyword==word) return 1;
-		return 0;
-	}
 	bool isword(char ch){return isalpha(ch)||ch=='_';}
 	bool issymbol(char ch){return !isdigit(ch)&&!isword(ch);}
 }
 int pCtrl()
 {
-	return keystate(key_control_l)||keystate(key_control_r)||keystate(key_control);
+	return keystate(key_control);
 }
 int pCtrl(int ch)
 {
 	return pCtrl()&&keystate(ch);
+}
+int pShift()
+{
+	return keystate(key_shift);
+}
+int pCtrlShift(int ch)
+{
+	return pCtrl()&&pShift()&&keystate(ch);
 }
 void outnumberxy(int x,int y,int num,PIMAGE img)
 {
@@ -91,101 +81,14 @@ string getClipboard() {
 
     return text;
 }
-struct __config
-{
-	int bracketAC; // bracket auto completion
-	int homeTabEnd; // home to tab end
-	string compileOp; // compile options
-	int lineNum; // line number
-	int useColor; // color text
-	int showIC; // show invisible chars
-	int saveTime; // save history text length (s)
-	int useMouse;
-	string workPath; // path of workspace
-	void _read_conf(const string filename="LemonCpp.config")
-	{
-		ifstream fin(filename);
-		if(!fin.good())
-		{
-			cout<<"didn't find \"LemonCpp.config\""<<endl;
-			return;
-		}
-		string str;
-		while(fin>>str)
-		{
-			if(str=="//") getline(fin,str);
-			else if(str=="bracketAC") fin>>bracketAC;
-			else if(str=="homeTabEnd") fin>>homeTabEnd;
-			else if(str=="compileOp") getline(fin,compileOp);
-			else if(str=="lineNum") fin>>hex>>lineNum;
-			else if(str=="useColor") fin>>useColor;
-			else if(str=="showIC") fin>>showIC;
-			else if(str=="saveTime") fin>>saveTime;
-			else if(str=="useMouse") fin>>useMouse;
-			else if(str=="workPath")
-			{
-				getline(fin,workPath);
-				while(workPath.size()&&workPath.front()==' ') workPath.erase(workPath.begin());
-			}
-		}
-	}
-	__config()
-	{
-		bracketAC=0;
-		homeTabEnd=0;
-		compileOp="";
-		lineNum=YELLOW;
-		useColor=0;
-		showIC=0;
-		saveTime=60;
-		useMouse=0;
-		workPath="";
-		_read_conf();
-	}
-}conf;
-struct __color_config
-{
-	color_t number; // in-code number
-	color_t keyword; // keyword
-	color_t precompile; // pre-compile sentences
-	color_t symbol; // symbol
-	color_t comment; // comment
-	color_t cstring; // const string and char
-	color_t invischar; // invisible char
-	color_t otherwise;
-	void _read_color_conf(const string filename="LemonCppColor.config")
-	{
-		ifstream fin(filename);
-		string str;
-		while(fin>>str)
-		{
-			if(str=="//") getline(fin,str);
-			else if(str=="number") fin>>hex>>number;
-			else if(str=="keyword") fin>>hex>>keyword;
-			else if(str=="precompile") fin>>hex>>precompile;
-			else if(str=="symbol") fin>>hex>>symbol;
-			else if(str=="comment") fin>>hex>>comment;
-			else if(str=="cstring") fin>>hex>>cstring;
-			else if(str=="invischar") fin>>hex>>invischar;
-			else if(str=="otherwise") fin>>hex>>otherwise;
-		}
-	}
-	__color_config()
-	{
-		number=WHITE;
-		keyword=WHITE;
-		precompile=WHITE;
-		otherwise=WHITE;
-		symbol=WHITE;
-		comment=WHITE;
-		cstring=WHITE;
-		invischar=EGERGBA(255,255,255,191);
-		_read_color_conf();
-	}
-}colorConf;
 int p,upline=1,curx,cury;
 string s,filename;
-pair<string,string> getRealExname()
+string getFilePath(string file)
+{
+	if(file.size()>2&&file[1]==':') return file;
+	return conf.workPath+file;
+}
+pair<string,string> getRealExname(string filename)
 {
 	string exname="",realname="";
 	for(int i=(int)filename.size()-1;i>=0;i--)
@@ -221,30 +124,87 @@ __History getNowRecord()
 }
 stack<__History> historyVer;
 bool hasfilename;
-const int delayLength=100;
+const int delayLength=200;
 const int Width=1024,Height=512,chWid=8,chHei=16;
 const int leDelta=4*chWid;
-struct chNode
-{
-	int x,id;
-	color_t color;
-};
 vector<vector<chNode>> _mp;
+struct __Chooser
+{
+	int fixp;
+	__Chooser():fixp(-1){}
+	bool empty()
+	{
+		return fixp==-1||fixp==p;
+	}
+	void setfixp(int p)
+	{
+		fixp=p;
+	}
+	void clear()
+	{
+		setfixp(-1);
+	}
+	void update()
+	{
+		setfixp(p);
+	}
+	int getl()
+	{
+		return min(fixp,p);
+	}
+	int getr()
+	{
+		return max(fixp,p)-1;
+	}
+	bool checkPos(int p)
+	{
+		if(empty()) return 0;
+		return getl()<=p&&getr()>=p;
+	}
+	vector<int> getLineNum()
+	{
+		if(empty()) return vector<int>();
+		int l=getl(),r=getr();
+		vector<int> res;
+		for(int i=1;i<(int)_mp.size();i++)
+		{
+			int le=_mp[i].front().id,ri=_mp[i].back().id;
+			if(max(le,l)<=min(ri,r)) res.push_back(i);
+		}
+		return res;
+	}
+}chooser;
 void init()
 {
+	setbkcolor(conf.bgColor);
 	s="",p=0,curx=0,cury=1,hasfilename=0,upline=1,filename="";
+	chooser.clear();
 	_mp.clear();
 	while(historyVer.size()) historyVer.pop();
 }
-bool erase_pre()
+void erase_pre()
 {
-	if(!p) return 0;
-	return s.erase(s.begin()+p-1),p--;
+	if(!chooser.empty())
+	{
+		int l=chooser.getl(),r=chooser.getr();
+		s.erase(l,r-l+1),p=l;
+	}
+	else if(p)
+	{
+		s.erase(s.begin()+p-1),p--;
+	}
 }
-bool erase_suf()
+void erase_suf()
 {
-	if(p==(int)s.size()) return 0;
-	return s.erase(s.begin()+p),1;
+	if(!chooser.empty())
+	{
+		int l=chooser.getl(),r=chooser.getr();
+		s.erase(l,r-l+1),p=l;
+	}
+	else if(p<(int)s.size())
+	{
+		s.erase(s.begin()+p);
+	}
 }
 int getCurTab()
 {
@@ -283,6 +243,18 @@ void move_left(){p?p--:0;}
 void move_right(){p!=(int)s.size()?p++:0;}
 void moveup(){upline>1?upline--:0;}
 void movedown(){upline++;}
+void movepageup()
+{
+	upline-=Height/chHei;
+	if(upline<1) upline=1;
+	p=_mp[upline].front().id;
+}
+void movepagedown()
+{
+	upline+=Height/chHei;
+	if(upline>=(int)_mp.size()) upline=(int)_mp.size()-1;
+	p=_mp[upline].front().id;
+}
 void move_end(){p=_mp[cury].back().id;}
 void move_home()
 {
@@ -304,7 +276,8 @@ void preprint(string &str)
 	// print
 	for(auto i:str)
 	{
-		chNode ch;ch.x=x,ch.id=cnt;ch.color=defaultcolor;
+		chNode ch;ch.x=x,ch.id=cnt;ch.color=defaultcolor;ch.bgcolor=conf.bgColor;
+		if(chooser.checkPos(cnt)) ch.bgcolor=0x3c55aaff;
 		_mp[y].push_back(ch);
 		if(i=='\n') y++,x=0,_mp.push_back({});
 		else
@@ -367,7 +340,7 @@ void preprint(string &str)
 			int begincol=col;
 			string curword;curword+=str[_mp[line][col].id];
 			while(!LIB::issymbol(str[_mp[line][col+1].id])) col++,curword+=str[_mp[line][col].id];
-			if(LIB::checkKeyWord(curword))
+			if(CPP::checkKeyWord(curword))
 			{
 				for(int _col=begincol;_col<=col;_col++)
 				{
@@ -467,8 +440,86 @@ void move_down()
 		}
 	}
 }
+void movelineup()
+{
+	int st=cury,en=cury;
+
+	if(!chooser.empty())
+	{
+		vector<int> lines=chooser.getLineNum();
+		st=lines.front(),en=lines.back();
+	}
+
+	// cout<<"(debug) lines=["<<st<<","<<en<<"]"<<endl;
+
+	if(st==1) return;
+
+	// move line st-1 to en
+	int bg=_mp[st-1].front().id,ed=_mp[st-1].back().id,tar=_mp[en].back().id+1;
+
+	// cout<<"(debug) move "<<bg<<" "<<ed<<" to "<<tar<<endl;
+
+	int len=ed-bg+1;
+	string str=s.substr(bg,len);
+	if(en==(int)_mp.size()-1)
+	{
+		tar--;
+		str="\n"+str;
+		str.pop_back();
+	}
+
+	if(!chooser.empty()) chooser.fixp-=len;
+	p-=len;
+	s.insert(tar,str);
+	s.erase(bg,len);
+}
+void movelinedown()
+{
+	int st=cury,en=cury;
+
+	if(!chooser.empty())
+	{
+		vector<int> lines=chooser.getLineNum();
+		st=lines.front(),en=lines.back();
+	}
+
+	// cout<<"(debug) lines=["<<st<<","<<en<<"]"<<endl;
+
+	if(en==(int)_mp.size()-1) return;
+
+	// move line st-1 to en
+	int bg=_mp[en+1].front().id,ed=_mp[en+1].back().id,tar=_mp[st].front().id;
+
+	
+	if(en+1==(int)_mp.size()-1)
+	{
+		bg--,ed--;
+	}
+
+	// cout<<"(debug) move "<<bg<<" "<<ed<<" to "<<tar<<endl;
+
+	int len=ed-bg+1;
+
+	string str=s.substr(bg,len);
+
+	// cerr<<"(debug) text="<<str<<endl;
+
+	if(en+1==(int)_mp.size()-1)
+	{
+		str.erase(str.begin());
+		str+="\n";
+	}
+
+	if(!chooser.empty()) chooser.fixp+=len;
+	p+=len;
+	s.erase(bg,len);
+	s.insert(tar,str);
+
+	// cout<<"(debug) p="<<p<<endl;
+}
 void deleteline()
 {
+	chooser.clear();
 	int st=_mp[cury].front().id,en=_mp[cury].back().id;
 	p=st;
 	if(cury==1&&(int)_mp.size()==2)
@@ -484,6 +535,7 @@ void deleteline()
 }
 void duplicateline()
 {
+	chooser.clear();
 	int st=_mp[cury].front().id,en=_mp[cury].back().id,pos=en;
 	if(cury<(int)_mp.size()-1) en--;
 	int len=en-st+1;
@@ -496,15 +548,17 @@ void print(string &str)
 
 	PIMAGE img=newimage(Width,Height);
 	setfont(chHei,chWid,"consolas",img);
-	
+	setbkcolor(conf.bgColor,img);
+
 	// for(int line=1;line<(int)_mp.size();line++)
 	for(int line=upline;line<(int)_mp.size()&&line<upline+Height/chHei;line++)
 	{
 		setcolor(conf.lineNum,img);
+		setfontbkcolor(conf.bgColor,img);
 		outnumberxy(0,(line-upline)*chHei,line,img);
 		for(auto ch:_mp[line])
 		{
-			int x=ch.x,id=ch.id;color_t co=ch.color;
+			int x=ch.x,id=ch.id;color_t co=ch.color,bgco=ch.bgcolor;
 			
 			if(x*chWid+leDelta>Width) break;
 
@@ -514,11 +568,18 @@ void print(string &str)
 			if(conf.showIC&&str[id]==' ') output=L'·',co=colorConf.invischar;
 
 			setcolor(co,img);
+			setfontbkcolor(bgco,img);
 			outtextxy(x*chWid+leDelta,(line-upline)*chHei,output,img);
+
+			if(str[id]=='\t')
+			{
+				setfontbkcolor(bgco,img);
+				outtextxy(x*chWid+leDelta,(line-upline)*chHei,string(4,' ').c_str(),img);
+			}
 		}
 	}
 
-	setcolor(WHITE,img);
+	setcolor(~conf.bgColor,img);
 	int posx=curx*chWid+leDelta,posy=(cury-upline)*chHei;
 	line(posx,posy,posx,posy+chHei,img);
 	putimage(0,0,img);
@@ -539,10 +600,10 @@ void savefile()
 		setcaption(filename.c_str());
 	}
 	ofstream fout;
-	fout.open(conf.workPath+filename);
+	fout.open(getFilePath(filename));
 	fout<<s;
 	fout.close();
-	cout<<"[saved]"<<endl;
+	// cout<<"[saved]"<<endl;
 }
 void newfile()
 {
@@ -555,13 +616,13 @@ void newfile()
 	setcaption("[untitled]");
 
 	init();
-	cout<<"[new]"<<endl;
+	// cout<<"[new]"<<endl;
 }
-void _openfile(string _filename,bool workPath=1)
+void _openfile(string _filename)
 {
-	ifstream fin;
-	if(workPath) fin.open(conf.workPath+_filename);
-	else fin.open(_filename);
+	_filename=getFilePath(_filename);
+
+	ifstream fin(_filename);
 	if(!fin.good()) return cout<<"can't find such file\n",void();
 
 	init();
@@ -571,7 +632,7 @@ void _openfile(string _filename,bool workPath=1)
 	setcaption(filename.c_str());
 
 	historyVer.push(getNowRecord());
-	cout<<"[opened]"<<endl;
+	// cout<<"[opened]"<<endl;
 }
 void openfile()
 {
@@ -587,10 +648,32 @@ void openfile()
 
 	_openfile(_filename);
 }
-void copyall()
+void chooseAll()
 {
-	copyToClipboard(s);
-	cout<<"[copied]"<<endl;
+	chooser.setfixp(0);
+	p=(int)s.size();
+}
+void copy()
+{
+	if(chooser.empty()) 
+	{
+		copyToClipboard(s);
+	}
+	else
+	{
+		int l=chooser.getl(),r=chooser.getr();
+		string text=s.substr(l,r-l+1);
+		copyToClipboard(text);
+	}
+	// cout<<"[copied]"<<endl;
+}
+void cut()
+{
+	if(!chooser.empty())
+	{
+		copy(),erase_pre();
+		chooser.clear();
+	}
 }
 void _RecordHistory()
 {
@@ -607,6 +690,7 @@ void _RecordHistory()
 }
 void undo()
 {
+	chooser.clear();
 	if(historyVer.size()) historyVer.top().undo(),historyVer.pop(),Flush();
 }
 void jumpline()
@@ -626,45 +710,107 @@ void jumpline()
 }
 void togglecomment()
 {
-	// checkcomment
-
-	int flag=-1;
-	for(int i=0;i<(int)_mp[cury].size()-1;i++)
+	auto checkcomment=[&](int y)->int
 	{
-		auto ch=_mp[cury][i],nch=_mp[cury][i+1];
-		if(s[ch.id]!='\t')
+		for(int i=0;i<(int)_mp[y].size()-1;i++)
 		{
-			if(s[ch.id]=='/'&&s[nch.id]=='/')
+			auto ch=_mp[y][i],nch=_mp[y][i+1];
+			if(s[ch.id]!='\t')
 			{
-				flag=ch.id;
+				if(s[ch.id]=='/'&&s[nch.id]=='/')
+				{
+					return ch.id;
+				}
+				break;
 			}
-			break;
+		}
+		return -1;
+	};
+
+	auto addcomment=[&](int y)->void
+	{
+		// cout<<"(debug) addcomment "<<y<<endl;
+
+		int pos=_mp[y].front().id;
+		p=pos;
+		s.insert(pos,"//");
+
+		preprint(s);
+	};
+
+	auto delcomment=[&](int y)->void
+	{
+		// cout<<"(debug) delcomment "<<y<<endl;
+
+		p=_mp[y].front().id;
+		int flag=checkcomment(y);
+		s.erase(flag,2);
+
+		preprint(s);
+	};
+
+	if(!chooser.empty())
+	{
+		bool flag=0; // is add
+		auto chooseLine=chooser.getLineNum();
+
+		// cout<<"(debug) choose=["<<chooser.getl()<<","<<chooser.getr()<<"]"<<endl;
+		// cout<<"(debug) chooseLine=[ ";
+		// for(int i:chooseLine) cout<<i<<" ";
+		// cout<<"]"<<endl;
+
+		for(int y:chooseLine)
+		{
+			if(checkcomment(y)==-1)
+			{
+				flag=1;
+				break;
+			}
+		}
+
+		if(flag)
+		{
+			for(int y:chooseLine)
+			{
+				addcomment(y);
+			}
+		}
+		else
+		{
+			for(int y:chooseLine)
+			{
+				delcomment(y);
+			}
+		}
+	}
+	else
+	{
+		if(checkcomment(cury)==-1) // add
+		{
+			addcomment(cury);
+		}
+		else // del
+		{
+			delcomment(cury);
 		}
 	}
 
-	if(flag==-1) // add
-	{
-		int pos=_mp[cury].front().id;
-		p=pos;
-		s.insert(pos,"//");
-	}
-	else // del
-	{
-		p=flag;
-		s.erase(flag,2);
-	}
+	chooser.clear();
 }
 void opencmd()
 {
 	thread(system,"start cmd").detach();
 }
 void compile(int run=0)
+	// run=0: compile only
+	// run=1: compile & run
+	// run=2: start extester
 {
 	savefile();
 
 	cout<<"-- start compiling --"<<endl;
 
-	auto __div_name=getRealExname();
+	auto __div_name=getRealExname(getFilePath(filename));
 	string exname=__div_name.second,realname=__div_name.first;
 	
 	if(exname!="cpp"&&exname!="c")
@@ -675,23 +821,30 @@ void compile(int run=0)
 
 	auto _compileMain=[&](string filename,string realname,int _run)->void
 	{
-		string cmd="g++.exe \""+conf.workPath+filename+"\" -o \""+conf.workPath+realname+".exe\" "+conf.compileOp;
+		string cmd="g++.exe \""+getFilePath(filename)+"\" -o \""+getFilePath(realname)+".exe\" "+conf.compileOp;
 		cout<<"compile command: "<<cmd<<endl;
 		int flag=system(cmd.c_str());
 		cout<<"-- compile finished --"<<endl;
 
-		if(!flag&&_run)
+		if(flag) return;
+
+		if(_run==1)
 		{
 			auto _runMain=[&](string realname)->void
 			{
 				fflush(stdin),fflush(stdout);
 				cout<<"--- running ---"<<endl;
-				string _run_cmd="\""+conf.workPath+realname+".exe\"";
+				string _run_cmd="start coderunner.exe \""+getFilePath(realname)+".exe\"";
+				// cout<<_run_cmd<<endl;
 				system(_run_cmd.c_str());
 				cout<<endl<<"--- finished ---"<<endl;
 				fflush(stdin),fflush(stdout);
 			};
 			thread(_runMain,realname).detach();
+		}
+		else if(_run==2)
+		{
+			Extester::main(getFilePath(filename),getFilePath(realname)+".exe",s,_mp);
 		}
 	};
 
@@ -699,18 +852,13 @@ void compile(int run=0)
 }
 void taskkill()
 {
-	cout<<"[taskkill]"<<endl;
-
+	// cout<<"[taskkill]"<<endl;
 	system("taskkill /im g++.exe /f");
 	system("taskkill /im cc1plus.exe /f");
-
-	string realname=getRealExname().first;
-	string cmd="taskkill /im "+realname+".exe /f";
-	system(cmd.c_str());
 }
 void _CheckMouse()
 {
-	while(1)
+	while(1) if(mousemsg())
 	{
 		mouse_msg msg=getmouse();
 		if(msg.is_wheel())
@@ -718,9 +866,12 @@ void _CheckMouse()
 			if(msg.wheel>0) moveup(),Flush();
 			else movedown(),Flush();
 		}
-		if(msg.is_left())
+		auto setmouse=[&]()->void
 		{
 			int _cury=msg.y/chHei+upline,_curx=(msg.x-leDelta)/chWid,_p;
+
+			if(_cury>=(int)_mp.size()) _cury=(int)_mp.size()-1;
+
 			auto _vec=_mp[_cury];
 			for(auto ch:_vec)
 			{
@@ -729,9 +880,43 @@ void _CheckMouse()
 				_p=id;
 			}
 			cury=_cury,curx=_curx,p=_p;
+		};
+
+		if(msg.is_left())
+		{
+			setmouse();
+		
+			if(pShift())
+			{
+				if(chooser.empty()) chooser.update();
+			}
+			else
+			{
+				chooser.clear();
+			}
+
 			Flush();
+
+			while(0)
+			// while(1)
+				if(mousemsg())
+			{
+				mouse_msg msg=getmouse();
+
+				if(!msg.is_left())
+				{
+					break;
+				}
+
+				cout<<"(debug) chooser=["<<chooser.getl()<<","<<chooser.getr()<<"]"<<endl;
+				setmouse();
+				Flush();
+				std::this_thread::sleep_for(chrono::milliseconds(10));
+			}
+
+			// check chooser
 		}
-		std::this_thread::sleep_for(chrono::milliseconds(5));
+		std::this_thread::sleep_for(chrono::milliseconds(10));
 	}
 }
 void _CheckKey()
@@ -744,59 +929,101 @@ void _CheckKey()
 	while(1)
 	{
 		int ch=getch();
-
-		// check Ctrl+?: these will be dealed with in _CheckKeyboard()
+		
+		// Ctrl+left/right/up/down
+		// Ctrl+otherkeys be dealed with in _CheckKeyboard()
 		// and avoid Ctrl+M='\n', etc
-		if(pCtrl()) continue;
 
+		if(pCtrl())
+		{
+			// if(0) ;
+			// // else if(ch==) togglecomment(),Flush(),Sleep(delayLength);
+			// else if(ch==294) moveup(),Flush(),Sleep(delayLength);
+			// else if(ch==296) movedown(),Flush(),Sleep(delayLength);
+			// // else if(ch==) ; // todo (dhc) (!fzs)
+			// // else if(ch==) ; // todo (dhc) (!fzs)
+			continue;
+		}
+		
 		if(0) cout<<"By @wangyizhi571247"<<endl;
 
-		// normal keys
-		else if(ch>=32&&ch<128) insert(ch),Flush();
-
-		// \t and \n
-		else if(ch==9) insert('\t'),Flush();
-		else if(ch==13)
+		// not "move" keys
+		else if((ch>=32&&ch<128)||ch==9||ch==13||ch==8||ch==302)
 		{
-			int c=getCurTab();
-			if(p&&s[p-1]=='{')
+			// cout<<"(debug) insert"<<"\'"<<(char)ch<<"\'"<<endl;
+
+			if(ch>=32&&ch<128) insert(ch);
+
+			// \t and \n
+			else if(ch==9)
 			{
-				insert('\n');
-				insert(string(c+1,'\t'));
-				if(p!=(int)s.size()&&s[p]=='}')
+				insert('\t');
+			}
+			else if(ch==13)
+			{
+				int c=getCurTab();
+				if(p&&s[p-1]=='{')
+				{
+					insert('\n');
+					insert(string(c+1,'\t'));
+					if(p!=(int)s.size()&&s[p]=='}')
+					{
+						insert('\n');
+						insert(string(c,'\t'));
+
+						move_up();
+						move_end();
+					}
+				}
+				else
 				{
 					insert('\n');
 					insert(string(c,'\t'));
-
-					move_up();
-					move_end();
 				}
+			}
+
+			// backspace&delete
+			else if(ch==8) erase_pre();
+			else if(ch==302) erase_suf();
+
+			chooser.clear();
+			chooser.update();
+			Flush();
+		}
+		// "move" keys
+		else if(ch>=289&&ch<=296)
+		{
+			// check chooser
+			if(pShift())
+			{
+				if(chooser.empty()) chooser.update();
 			}
 			else
 			{
-				insert('\n');
-				insert(string(c,'\t'));
+				chooser.clear();
 			}
+
+			if(0) ;
+
+			// page up&down
+			else if(ch==289) movepageup();
+			else if(ch==290) movepagedown();
+
+			// home&end
+			else if(ch==292) move_home();
+			else if(ch==291) move_end();
+
+			// up&down&left&right
+			else if(ch==293) move_left();
+			else if(ch==295) move_right();
+			else if(ch==294) move_up();
+			else if(ch==296) move_down();
+
+			// cout<<"(debug) chooser= "<<chooser.getl()<<" "<<chooser.getr()<<endl;
 			Flush();
 		}
 
-		// page up&down
-		else if(ch==289) moveup(),Flush();
-		else if(ch==290) movedown(),Flush();
-
-		// home&end
-		else if(ch==292) move_home(),Flush();
-		else if(ch==291) move_end(),Flush();
-
-		// up&down&left&right
-		else if(ch==293) move_left(),Flush();
-		else if(ch==295) move_right(),Flush();
-		else if(ch==294) move_up(),Flush();
-		else if(ch==296) move_down(),Flush();
-
-		// backspace&delete
-		else if(ch==8) erase_pre(),Flush();
-		else if(ch==302) erase_suf(),Flush();
+		this_thread::sleep_for(chrono::milliseconds(10));
 	}
 }
 void _CheckKeyboard()
@@ -806,14 +1033,22 @@ void _CheckKeyboard()
 	{
 		if(0) cout<<"By @wangyizhi571247"<<endl;
 
+		// check ctrl+shift+? first
+		else if(pCtrlShift(key_up)) movelineup(),Flush(),Sleep(delayLength);
+		else if(pCtrlShift(key_down)) movelinedown(),Flush(),Sleep(delayLength);
+
+		// ctrl+?
 		else if(pCtrl('N')) newfile(),Flush(),Sleep(delayLength);
 		else if(pCtrl('O')) openfile(),Flush(),Sleep(delayLength);
 		else if(pCtrl('S')) savefile(),Flush(),Sleep(delayLength);
 
+		else if(pCtrl('A')) chooseAll(),Flush(),Sleep(delayLength);
+
 		else if(pCtrl('D')) deleteline(),Flush(),Sleep(delayLength);
 		else if(pCtrl('E')) duplicateline(),Flush(),Sleep(delayLength);
 		
-		else if(pCtrl('C')) copyall(),Sleep(delayLength);
+		else if(pCtrl('C')) copy(),Sleep(delayLength);
+		else if(pCtrl('X')) cut(),Flush(),Sleep(delayLength);
 		else if(pCtrl('V')) insert_paste(),Flush(),Sleep(delayLength);
 
 		else if(pCtrl('Z')) undo(),Flush(),Sleep(delayLength);
@@ -824,25 +1059,48 @@ void _CheckKeyboard()
 		else if(pCtrl('J')) jumpline(),Flush();
 
 		else if(pCtrl(key_slash)) togglecomment(),Flush(),Sleep(delayLength);
-		else if(pCtrl(key_left)) ; // todo (dhc)
-		else if(pCtrl(key_right)) ; // todo (dhc)
+		else if(pCtrl(key_up)) moveup(),Flush(),Sleep(delayLength);
+		else if(pCtrl(key_down)) movedown(),Flush(),Sleep(delayLength);
+		else if(pCtrl(key_left)) ; // todo (dhc) (!fzs)
+		else if(pCtrl(key_right)) ; // todo (dhc) (!fzs)
 		else if(pCtrl(key_back)) ; // todo
+		
 		else if(pCtrl()) ; // do nothing
-
+		
+		// fn
 		else if(keystate(key_f9)) compile(),Sleep(delayLength);
 		else if(keystate(key_f11)) compile(1),Sleep(delayLength);
+		else if(keystate(key_f12)) compile(2),Sleep(delayLength);
+
+		this_thread::sleep_for(chrono::milliseconds(10));
 	}
 }
 int main(int argc,char** argv)
 {
+	// system("cd");
+
 	system("title LemonCpp");
 
 	initgraph(Width,Height);
 	setcaption("[untitled]");
 
-	if(argc>1) _openfile(argv[1],0);
+	// if(argc>1) _openfile(argv[1]);
+
+	/*debug*/
+	// if(0)
+	// {
+	// 	_openfile("CF1555F.cpp");
+	// }
 
 	Flush();
+
+	/*extester debug*/
+	// if(0)
+	// {
+	// 	Extester::main("C:/Users/sbghj/Desktop/wangyizhi/code/CF1555F.cpp","C:/Users/sbghj/Desktop/wangyizhi/code/CF1555F.exe",s,_mp);
+	// 	system("pause");
+	// 	return 0;
+	// }
 	
 	if(conf.useMouse) thread(_CheckMouse).detach();
 	thread(_CheckKey).detach();
@@ -854,11 +1112,14 @@ int main(int argc,char** argv)
 	{
 		if(keystate(key_esc))
 		{
+			// break;
 			int ans;
 			cout<<"are you sure?(yes:1 no:0):";
 			cin>>ans;
 			if(ans) break;
 		}
+
+		this_thread::sleep_for(chrono::milliseconds(10));
 	}
 
 	return 0;
